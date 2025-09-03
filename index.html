@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Ujian MTsN 43 Jakarta</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 400px;
+        }
+        .logo {
+            max-width: 150px;
+            margin-bottom: 20px;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #error {
+            color: red;
+            margin-top: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .edit-input {
+            width: 80%;
+            display: inline-block;
+        }
+        .edit-btn {
+            width: 18%;
+            padding: 5px;
+            margin-left: 2%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="loginContainer">
+        <img id="logo" class="logo" src="" alt="Logo">
+        <h2 id="appName">E-Ujian MTsN 43 Jakarta</h2>
+        <input type="text" id="nisn" placeholder="NISN / Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="login()">Login</button>
+        <div id="error"></div>
+    </div>
+
+    <div class="container" id="studentDashboard" style="display:none;">
+        <img id="logoSubjects" class="logo" src="" alt="Logo">
+        <h2 id="appNameSubjects">E-Ujian MTsN 43 Jakarta</h2>
+        <h3>Pilih Mata Pelajaran</h3>
+        <select id="subject">
+            <option value="ujian7">Ujian Kelas 7</option>
+            <option value="ujian8">Ujian Kelas 8</option>
+            <option value="ujian9">Ujian Kelas 9</option>
+        </select>
+        <button onclick="goToToken()">Lanjut</button>
+    </div>
+
+    <div class="container" id="adminDashboard" style="display:none; width:600px;">
+        <img id="logoAdmin" class="logo" src="" alt="Logo">
+        <h2 id="appNameAdmin">Dashboard - E-Ujian MTsN 43 Jakarta</h2>
+        <h3>Token Ujian</h3>
+        <table id="tokensTable">
+            <tr><th>Mata Pelajaran</th><th>Token Saat Ini</th><th>Timer (menit)</th><th>Aksi</th></tr>
+        </table>
+        <h3>Kecurangan Siswa per Kelas</h3>
+        <select id="kelasFilter" onchange="filterCheats()">
+            <option value="">Semua Kelas</option>
+            <option value="7">Kelas 7</option>
+            <option value="8">Kelas 8</option>
+            <option value="9">Kelas 9</option>
+        </select>
+        <table id="cheatsTable">
+            <tr><th>NISN</th><th>Nama</th><th>Kelas</th><th>Waktu</th><th>Mata Pelajaran</th></tr>
+        </table>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <div class="container" id="tokenContainer" style="display:none;">
+        <img id="logoToken" class="logo" src="" alt="Logo">
+        <h2 id="appNameToken">E-Ujian MTsN 43 Jakarta</h2>
+        <h3>Masukkan Token</h3>
+        <input type="text" id="token" placeholder="Token">
+        <button onclick="verifyToken()">Verifikasi</button>
+        <div id="tokenError" style="color:red;"></div>
+    </div>
+
+    <div id="examContainer" style="display:none; width:100%; height:100vh; position:fixed; top:0; left:0; background:white;">
+        <div style="text-align:center; padding:10px; background:#eee;">
+            <span id="timer">Waktu: 00:00</span>
+        </div>
+        <iframe id="examFrame" style="width:100%; height:calc(100% - 50px); border:none;"></iframe>
+    </div>
+
+    <audio id="alarm" src="https://www.soundjay.com/buttons/beep-07.mp3" preload="auto"></audio>
+
+    <script>
+        let spreadsheetId = 'https://script.google.com/macros/s/AKfycbyXHVHD_T8bnGZ6c15_XpGQwsf-2QVTFEBKldcDy0S5zxRx0094mhXRvvn2NYMYqMqoSQ/exec';
+        let userData = null;
+        let selectedSubject = null;
+        let attemptCount = 0;
+        let timerInterval;
+        let remainingTime;
+        let cheatData = [];
+        let isAdmin = false;
+
+        // Disable copy-paste
+        document.addEventListener('copy', (e) => e.preventDefault());
+        document.addEventListener('cut', (e) => e.preventDefault());
+        document.addEventListener('paste', (e) => e.preventDefault());
+
+        // Attempt to disable screenshot
+        document.addEventListener('keyup', (e) => {
+            if (e.key == 'PrintScreen') {
+                navigator.clipboard.writeText('');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key == 'p') e.preventDefault();
+        });
+
+        // Detect leaving the page
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && (document.getElementById('studentDashboard').style.display === 'block' || document.getElementById('tokenContainer').style.display === 'block' || document.getElementById('examContainer').style.display === 'block')) {
+                attemptCount++;
+                playAlarm();
+                logCheatAttempt();
+                if (attemptCount === 1) {
+                    alert('Anda berusaha keluar aplikasi. 1 kali lagi Anda akan diarahkan ke halaman login.');
+                } else if (attemptCount >= 2) {
+                    alert('Anda telah mencoba keluar 2 kali. Kembali ke login.');
+                    logout();
+                }
+            }
+        });
+
+        // Disable notification bar (limited)
+        if ('Notification' in window) {
+            Notification.requestPermission().then(perm => {});
+        }
+
+        // Detect back
+        window.addEventListener('popstate', () => {
+            attemptCount++;
+            playAlarm();
+            logCheatAttempt();
+            if (attemptCount === 1) {
+                alert('Anda berusaha keluar aplikasi. 1 kali lagi Anda akan diarahkan ke halaman login.');
+                history.pushState(null, null, location.href);
+            } else if (attemptCount >= 2) {
+                alert('Anda telah mencoba keluar 2 kali. Kembali ke login.');
+                logout();
+            }
+        });
+        history.pushState(null, null, location.href);
+
+        function playAlarm() {
+            const audio = document.getElementById('alarm');
+            audio.volume = 1.0;
+            audio.play();
+        }
+
+        window.onload = function() {
+            google.script.run.withSuccessHandler(loadSettings).getSettings();
+        };
+
+        function loadSettings(settings) {
+            document.querySelectorAll('.logo').forEach(img => img.src = settings.logo);
+            document.querySelectorAll('h2').forEach(h => h.innerText = settings.appName || 'E-Ujian MTsN 43 Jakarta');
+        }
+
+        function login() {
+            const nisn = document.getElementById('nisn').value;
+            const password = document.getElementById('password').value;
+            google.script.run.withSuccessHandler(onLoginSuccess).withFailureHandler(onLoginFailure).validateLogin(nisn, password);
+        }
+
+        function onLoginSuccess(data) {
+            if (data) {
+                userData = data;
+                document.getElementById('loginContainer').style.display = 'none';
+                if (data.role === 'Guru' || data.role === 'Admin') {
+                    isAdmin = (data.role === 'Admin');
+                    loadStaffDashboard();
+                } else {
+                    document.getElementById('studentDashboard').style.display = 'block';
+                }
+            } else {
+                document.getElementById('error').innerText = 'NISN/Username atau password salah.';
+            }
+        }
+
+        function onLoginFailure(error) {
+            document.getElementById('error').innerText = 'Terjadi kesalahan: ' + error.message;
+        }
+
+        function loadStaffDashboard() {
+            document.getElementById('adminDashboard').style.display = 'block';
+            document.getElementById('appNameAdmin').innerText = `Dashboard ${userData.role} - E-Ujian MTsN 43 Jakarta`;
+            google.script.run.withSuccessHandler(displayTokens).getTokens();
+            google.script.run.withSuccessHandler(displayCheats).getCheats();
+        }
+
+        function displayTokens(tokens) {
+            const table = document.getElementById('tokensTable');
+            table.innerHTML = '<tr><th>Mata Pelajaran</th><th>Token Saat Ini</th><th>Timer (menit)</th><th>Aksi</th></tr>';
+            for (let key in tokens) {
+                let row = table.insertRow();
+                row.insertCell(0).innerText = key.toUpperCase();
+                row.insertCell(1).innerText = tokens[key].token || '(Dinamis)';
+                row.insertCell(2).innerText = tokens[key].timer;
+                let actionCell = row.insertCell(3);
+                if (isAdmin) {
+                    let input = document.createElement('input');
+                    input.className = 'edit-input';
+                    input.placeholder = 'Custom Token';
+                    input.value = tokens[key].custom || '';
+                    let btn = document.createElement('button');
+                    btn.className = 'edit-btn';
+                    btn.innerText = 'Update';
+                    btn.onclick = () => updateToken(key, input.value);
+                    actionCell.appendChild(input);
+                    actionCell.appendChild(btn);
+                } else {
+                    actionCell.innerText = '-';
+                }
+            }
+        }
+
+        function updateToken(subject, newToken) {
+            google.script.run.withSuccessHandler(() => {
+                alert('Token updated!');
+                google.script.run.withSuccessHandler(displayTokens).getTokens();
+            }).updateCustomToken(subject, newToken);
+        }
+
+        function displayCheats(cheats) {
+            cheatData = cheats;
+            populateCheatsTable('');
+        }
+
+        function populateCheatsTable(kelas) {
+            const table = document.getElementById('cheatsTable');
+            table.innerHTML = '<tr><th>NISN</th><th>Nama</th><th>Kelas</th><th>Waktu</th><th>Mata Pelajaran</th></tr>';
+            cheatData.forEach(cheat => {
+                if (!kelas || cheat.kelas.toString() === kelas) {
+                    let row = table.insertRow();
+                    row.insertCell(0).innerText = cheat.nisn;
+                    row.insertCell(1).innerText = cheat.nama;
+                    row.insertCell(2).innerText = cheat.kelas;
+                    row.insertCell(3).innerText = cheat.waktu;
+                    row.insertCell(4).innerText = cheat.subject;
+                }
+            });
+        }
+
+        function filterCheats() {
+            const kelas = document.getElementById('kelasFilter').value;
+            populateCheatsTable(kelas);
+        }
+
+        function goToToken() {
+            selectedSubject = document.getElementById('subject').value;
+            document.getElementById('studentDashboard').style.display = 'none';
+            document.getElementById('tokenContainer').style.display = 'block';
+        }
+
+        function verifyToken() {
+            const token = document.getElementById('token').value;
+            google.script.run.withSuccessHandler(onTokenSuccess).withFailureHandler(onTokenFailure).validateToken(selectedSubject, token);
+        }
+
+        function onTokenSuccess(examData) {
+            if (examData) {
+                document.getElementById('tokenContainer').style.display = 'none';
+                document.getElementById('examContainer').style.display = 'block';
+                document.getElementById('examFrame').src = examData.link;
+                remainingTime = examData.timer * 60;
+                startTimer();
+            } else {
+                document.getElementById('tokenError').innerText = 'Token salah.';
+            }
+        }
+
+        function onTokenFailure(error) {
+            document.getElementById('tokenError').innerText = 'Terjadi kesalahan: ' + error.message;
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                remainingTime--;
+                const minutes = Math.floor(remainingTime / 60);
+                const seconds = remainingTime % 60;
+                document.getElementById('timer').innerText = `Waktu: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                if (remainingTime <= 0) {
+                    clearInterval(timerInterval);
+                    submitForm();
+                }
+            }, 1000);
+        }
+
+        function submitForm() {
+            const iframe = document.getElementById('examFrame');
+            const form = iframe.contentWindow.document.querySelector('form');
+            if (form) {
+                form.submit();
+            }
+            alert('Waktu habis! Jawaban telah dikirim.');
+            logout();
+        }
+
+        function logCheatAttempt() {
+            if (userData.role !== 'Guru' && userData.role !== 'Admin') {
+                google.script.run.logCheat(userData.nisn, selectedSubject);
+            }
+        }
+
+        function logout() {
+            attemptCount = 0;
+            clearInterval(timerInterval);
+            userData = null;
+            document.getElementById('examContainer').style.display = 'none';
+            document.getElementById('tokenContainer').style.display = 'none';
+            document.getElementById('studentDashboard').style.display = 'none';
+            document.getElementById('adminDashboard').style.display = 'none';
+            document.getElementById('loginContainer').style.display = 'block';
+            document.getElementById('nisn').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('token').value = '';
+            document.getElementById('error').innerText = '';
+            document.getElementById('tokenError').innerText = '';
+        }
+    </script>
+</body>
+</html>
